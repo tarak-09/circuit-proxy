@@ -1,0 +1,33 @@
+[project]
+name = "breaker-proxy"
+version = "0.1.0"
+description = "An async HTTP reverse proxy implementing a circuit breaker."
+authors = [{ name = "AI", email = "ai@example.com" }]
+requires-python = ">=3.9"
+dependencies = [
+    "aiohttp>=3.9.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "pytest-aiohttp>=1.0.5",
+]
+
+[project.scripts]
+breaker-proxy = "breaker_proxy.main:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["breaker_proxy*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
