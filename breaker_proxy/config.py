@@ -15,6 +15,7 @@ class ProxyConfig:
     host: str
     port: int
     upstream_url: str
+    management_port: int = 9090
     upstream_timeout_seconds: float = 5.0
     breaker: BreakerConfig = field(default_factory=BreakerConfig)
 
@@ -34,6 +35,7 @@ def load_config(config_path: str) -> ProxyConfig:
     return ProxyConfig(
         host=data.get('host', '127.0.0.1'),
         port=int(data.get('port', 8080)),
+        management_port=int(data.get('management_port', 9090)),
         upstream_url=data.get('upstream_url', 'http://127.0.0.1:9000'),
         upstream_timeout_seconds=float(data.get('upstream_timeout_seconds', 5.0)),
         breaker=breaker_config

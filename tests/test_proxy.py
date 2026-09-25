@@ -42,7 +42,7 @@ async def test_proxy_success(aiohttp_client, aiohttp_server, proxy_config):
     proxy_config.upstream_url = f"http://{upstream_server.host}:{upstream_server.port}"
     
     # Setup Proxy
-    proxy_app = await init_app(proxy_config)
+    proxy_app, proxy_handler = await init_app(proxy_config)
     proxy_client = await aiohttp_client(proxy_app)
     
     resp = await proxy_client.get("/success")
@@ -59,7 +59,7 @@ async def test_proxy_circuit_trips(aiohttp_client, aiohttp_server, proxy_config)
     
     # Setup Proxy config
     proxy_config.upstream_url = f"http://{upstream_server.host}:{upstream_server.port}"
-    proxy_app = await init_app(proxy_config)
+    proxy_app, proxy_handler = await init_app(proxy_config)
     proxy_client = await aiohttp_client(proxy_app)
     
     # Send 2 failures to trip the circuit
@@ -84,7 +84,7 @@ async def test_proxy_upstream_timeout(aiohttp_client, aiohttp_server, proxy_conf
     
     # Setup Proxy config
     proxy_config.upstream_url = f"http://{upstream_server.host}:{upstream_server.port}"
-    proxy_app = await init_app(proxy_config)
+    proxy_app, proxy_handler = await init_app(proxy_config)
     proxy_client = await aiohttp_client(proxy_app)
     
     # Send timeout requests

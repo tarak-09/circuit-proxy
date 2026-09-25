@@ -73,7 +73,7 @@ class ProxyHandler:
             self.breaker.record_failure()
             return web.Response(status=502, text="Bad Gateway (Upstream Failure)")
 
-async def init_app(config: ProxyConfig) -> web.Application:
+async def init_app(config: ProxyConfig) -> tuple[web.Application, ProxyHandler]:
     app = web.Application()
     handler = ProxyHandler(config)
     
@@ -82,4 +82,4 @@ async def init_app(config: ProxyConfig) -> web.Application:
     
     # Catch-all route
     app.router.add_route('*', '/{tail:.*}', handler.handle_request)
-    return app
+    return app, handler
