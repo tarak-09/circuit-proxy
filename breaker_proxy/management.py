@@ -5,7 +5,7 @@ from .circuit_breaker import CircuitBreaker
 
 logger = logging.getLogger(__name__)
 
-def create_management_app(breaker: CircuitBreaker) -> web.Application:
+def create_management_app(breakers: list[CircuitBreaker]) -> web.Application:
     app = web.Application()
 
     async def metrics_handler(request: web.Request) -> web.Response:
@@ -15,11 +15,14 @@ def create_management_app(breaker: CircuitBreaker) -> web.Application:
         return web.Response(body=data, headers={"Content-Type": CONTENT_TYPE_LATEST})
 
     async def get_state_handler(request: web.Request) -> web.Response:
-        return web.json_response({"state": breaker.state.value})
+        states = {breaker.url: breaker.state.value for breaker in breakers}
+        return web.json_response(states)
 
     async def reset_handler(request: web.Request) -> web.Response:
-        breaker.manual_reset()
-        return web.json_response({"status": "ok", "state": breaker.state.value})
+        for breaker in breakers:
+            breaker.manual_reset()
+        states = {breaker.url: breaker.state.value for breaker in breakers}
+        return web.json_response({"status": "ok", "states": states})
 
     app.router.add_get('/metrics', metrics_handler)
     app.router.add_get('/api/state', get_state_handler)

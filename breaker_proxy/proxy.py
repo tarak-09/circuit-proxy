@@ -10,13 +10,18 @@ logger = logging.getLogger(__name__)
 class ProxyHandler:
     def __init__(self, config: ProxyConfig):
         self.config = config
-        self.breaker = CircuitBreaker(
-            failure_threshold_ratio=config.breaker.failure_threshold_ratio,
-            min_requests=config.breaker.min_requests,
-            window_size_seconds=config.breaker.window_size_seconds,
-            reset_timeout_seconds=config.breaker.reset_timeout_seconds,
-            half_open_max_probes=config.breaker.half_open_max_probes
-        )
+        self.breakers = [
+            CircuitBreaker(
+                url=url,
+                failure_threshold_ratio=config.breaker.failure_threshold_ratio,
+                min_requests=config.breaker.min_requests,
+                window_size_seconds=config.breaker.window_size_seconds,
+                reset_timeout_seconds=config.breaker.reset_timeout_seconds,
+                half_open_max_probes=config.breaker.half_open_max_probes
+            )
+            for url in config.upstream_urls
+        ]
+        self.current_index = 0
         self.session = None
 
     async def start(self):
@@ -28,11 +33,25 @@ class ProxyHandler:
             await self.session.close()
 
     async def handle_request(self, request: web.Request) -> web.Response:
-        if not self.breaker.can_request():
-            logger.warning("Rejecting request, circuit breaker is OPEN/HALF_OPEN (max probes reached).")
-            return web.Response(status=503, text="Service Unavailable (Circuit Breaker Open)")
+        urls_count = len(self.breakers)
+        selected_breaker = None
+        selected_url = None
+        
+        for _ in range(urls_count):
+            idx = self.current_index
+            self.current_index = (self.current_index + 1) % urls_count
+            
+            breaker = self.breakers[idx]
+            if breaker.can_request():
+                selected_breaker = breaker
+                selected_url = self.config.upstream_urls[idx]
+                break
 
-        upstream_url = yarl.URL(self.config.upstream_url)
+        if not selected_breaker:
+            logger.warning("Rejecting request, all circuit breakers are OPEN/HALF_OPEN.")
+            return web.Response(status=503, text="Service Unavailable (All Circuit Breakers Open)")
+
+        upstream_url = yarl.URL(selected_url)
         target_url = upstream_url.with_path(request.path).with_query(request.query)
 
         # Prepare headers to forward
@@ -54,9 +73,9 @@ class ProxyHandler:
                 
                 status = upstream_response.status
                 if status >= 500:
-                    self.breaker.record_failure()
+                    selected_breaker.record_failure()
                 else:
-                    self.breaker.record_success()
+                    selected_breaker.record_success()
 
                 # Read body and headers to return
                 body = await upstream_response.read()
@@ -70,7 +89,7 @@ class ProxyHandler:
 
         except (ClientError, asyncio.TimeoutError) as e:
             logger.error(f"Upstream request failed: {e}")
-            self.breaker.record_failure()
+            selected_breaker.record_failure()
             return web.Response(status=502, text="Bad Gateway (Upstream Failure)")
 
 async def init_app(config: ProxyConfig) -> tuple[web.Application, ProxyHandler]:

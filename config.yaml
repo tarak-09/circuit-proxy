@@ -1,6 +1,7 @@
 host: 127.0.0.1
 port: 8080
-upstream_url: http://127.0.0.1:9000
+upstream_urls:
+  - http://127.0.0.1:9000
 upstream_timeout_seconds: 5.0
 
 breaker:

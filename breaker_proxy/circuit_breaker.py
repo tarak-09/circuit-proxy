@@ -15,12 +15,14 @@ class CircuitState(Enum):
 class CircuitBreaker:
     def __init__(
         self,
+        url: str = "default",
         failure_threshold_ratio: float = 0.5,
         min_requests: int = 5,
         window_size_seconds: float = 10.0,
         reset_timeout_seconds: float = 5.0,
         half_open_max_probes: int = 3,
     ):
+        self.url = url
         self.failure_threshold_ratio = failure_threshold_ratio
         self.min_requests = min_requests
         self.window_size_seconds = window_size_seconds
@@ -28,7 +30,7 @@ class CircuitBreaker:
         self.half_open_max_probes = half_open_max_probes
         
         self.state = CircuitState.CLOSED
-        CIRCUIT_STATE.state(self.state.value)
+        CIRCUIT_STATE.labels(url=self.url).state(self.state.value)
         
         # Store events as (timestamp, is_failure)
         self.history = collections.deque()
@@ -37,21 +39,21 @@ class CircuitBreaker:
         self._reset_task = None
 
     def record_success(self):
-        REQUESTS_TOTAL.labels(status='success').inc()
+        REQUESTS_TOTAL.labels(url=self.url, status='success').inc()
         self._record_event(is_failure=False)
         if self.state == CircuitState.HALF_OPEN:
             self._half_open_probes += 1
             if self._half_open_probes >= self.half_open_max_probes:
-                logger.warning("CircuitBreaker: Probes successful. Transitioning to CLOSED.")
+                logger.warning(f"CircuitBreaker[{self.url}]: Probes successful. Transitioning to CLOSED.")
                 self._transition_to_closed()
 
     def record_failure(self):
-        REQUESTS_TOTAL.labels(status='failure').inc()
+        REQUESTS_TOTAL.labels(url=self.url, status='failure').inc()
         self._record_event(is_failure=True)
         if self.state == CircuitState.CLOSED:
             self._check_failure_rate()
         elif self.state == CircuitState.HALF_OPEN:
-            logger.warning("CircuitBreaker: Probe failed. Transitioning to OPEN.")
+            logger.warning(f"CircuitBreaker[{self.url}]: Probe failed. Transitioning to OPEN.")
             self._transition_to_open()
 
     def _record_event(self, is_failure: bool):
@@ -67,11 +69,11 @@ class CircuitBreaker:
     def _update_failure_rate_metric(self):
         total = len(self.history)
         if total == 0:
-            FAILURE_RATE.set(0.0)
+            FAILURE_RATE.labels(url=self.url).set(0.0)
             return 0.0
         failures = sum(1 for _, is_fail in self.history if is_fail)
         rate = failures / total
-        FAILURE_RATE.set(rate)
+        FAILURE_RATE.labels(url=self.url).set(rate)
         return rate
 
     def _check_failure_rate(self):
@@ -84,12 +86,12 @@ class CircuitBreaker:
             return
             
         if rate >= self.failure_threshold_ratio:
-            logger.warning(f"CircuitBreaker: Failure rate {rate:.2f} exceeded threshold {self.failure_threshold_ratio:.2f}. Transitioning to OPEN.")
+            logger.warning(f"CircuitBreaker[{self.url}]: Failure rate {rate:.2f} exceeded threshold {self.failure_threshold_ratio:.2f}. Transitioning to OPEN.")
             self._transition_to_open()
 
     def _transition_to_open(self):
         self.state = CircuitState.OPEN
-        CIRCUIT_STATE.state(self.state.value)
+        CIRCUIT_STATE.labels(url=self.url).state(self.state.value)
         self.history.clear()
         self._update_failure_rate_metric()
         
@@ -100,7 +102,7 @@ class CircuitBreaker:
 
     def _transition_to_closed(self):
         self.state = CircuitState.CLOSED
-        CIRCUIT_STATE.state(self.state.value)
+        CIRCUIT_STATE.labels(url=self.url).state(self.state.value)
         self.history.clear()
         self._update_failure_rate_metric()
         self._half_open_probes = 0
@@ -110,13 +112,13 @@ class CircuitBreaker:
 
     def manual_reset(self):
         """Manually force the circuit breaker into CLOSED state."""
-        logger.info("CircuitBreaker: Manually resetting to CLOSED.")
+        logger.info(f"CircuitBreaker[{self.url}]: Manually resetting to CLOSED.")
         self._transition_to_closed()
 
     def _transition_to_half_open(self):
-        logger.warning("CircuitBreaker: Reset timeout elapsed. Transitioning to HALF_OPEN.")
+        logger.warning(f"CircuitBreaker[{self.url}]: Reset timeout elapsed. Transitioning to HALF_OPEN.")
         self.state = CircuitState.HALF_OPEN
-        CIRCUIT_STATE.state(self.state.value)
+        CIRCUIT_STATE.labels(url=self.url).state(self.state.value)
         self._half_open_probes = 0
 
     async def _reset_timer(self):

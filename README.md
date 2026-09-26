@@ -41,7 +41,9 @@ breaker-proxy -c config.yaml
 host: 127.0.0.1
 port: 8080
 management_port: 9090
-upstream_url: http://127.0.0.1:9000
+upstream_urls:
+  - http://127.0.0.1:9000
+  - http://127.0.0.1:9001
 upstream_timeout_seconds: 5.0
 
 breaker:
@@ -56,9 +58,9 @@ breaker:
 
 The proxy also starts a management API (by default on port `9090`).
 
-- **`GET /metrics`**: Exposes real-time Prometheus metrics including `circuit_state`, `circuit_requests_total`, and `circuit_failure_rate`.
-- **`GET /api/state`**: Returns the current state of the circuit breaker in JSON format (`{"state": "CLOSED"}`).
-- **`POST /api/reset`**: Manually force the circuit breaker to reset to the `CLOSED` state.
+- **`GET /metrics`**: Exposes real-time Prometheus metrics including `circuit_state`, `circuit_requests_total`, and `circuit_failure_rate`, labeled by `url`.
+- **`GET /api/state`**: Returns the current state of all circuit breakers in JSON format (`{"http://127.0.0.1:9000": "CLOSED"}`).
+- **`POST /api/reset`**: Manually force all circuit breakers to reset to the `CLOSED` state.
 
 ## Worked Example
 
