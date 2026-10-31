@@ -139,3 +139,39 @@ async def test_proxy_load_balancing_and_fallback(aiohttp_client, aiohttp_server,
     # Request 5 -> Should go to Server 2 again (because 1 is skipped).
     resp5 = await proxy_client.get("/success")
     assert resp5.status == 200
+
+@pytest.mark.asyncio
+async def test_rate_limiter(aiohttp_client, aiohttp_server, proxy_config):
+    # Setup Upstream
+    upstream_app = web.Application()
+    upstream_app.router.add_route('*', '/{tail:.*}', upstream_handler)
+    upstream_server = await aiohttp_server(upstream_app)
+    
+    # Update config with rate limiter
+    proxy_config.upstream_urls = [f"http://{upstream_server.host}:{upstream_server.port}"]
+    proxy_config.rate_limit.enabled = True
+    proxy_config.rate_limit.rate = 1.0 # 1 token per second
+    proxy_config.rate_limit.burst = 2  # Max 2 tokens
+    
+    proxy_app, proxy_handler = await init_app(proxy_config)
+    proxy_client = await aiohttp_client(proxy_app)
+    
+    # We can make 2 requests immediately
+    resp1 = await proxy_client.get("/success")
+    assert resp1.status == 200
+    
+    resp2 = await proxy_client.get("/success")
+    assert resp2.status == 200
+    
+    # The third request should be rate limited
+    resp3 = await proxy_client.get("/success")
+    assert resp3.status == 429
+    assert await resp3.text() == "Too Many Requests"
+
+    # Wait for token refill
+    import asyncio
+    await asyncio.sleep(1.1)
+    
+    # Should be able to make a request again
+    resp4 = await proxy_client.get("/success")
+    assert resp4.status == 200

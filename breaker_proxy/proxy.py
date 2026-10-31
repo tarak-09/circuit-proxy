@@ -3,6 +3,7 @@ import logging
 from aiohttp import web, ClientSession, ClientTimeout, ClientError
 from .circuit_breaker import CircuitBreaker
 from .config import ProxyConfig
+from .rate_limiter import create_rate_limit_middleware
 import yarl
 
 logger = logging.getLogger(__name__)
@@ -93,7 +94,7 @@ class ProxyHandler:
             return web.Response(status=502, text="Bad Gateway (Upstream Failure)")
 
 async def init_app(config: ProxyConfig) -> tuple[web.Application, ProxyHandler]:
-    app = web.Application()
+    app = web.Application(middlewares=[create_rate_limit_middleware(config.rate_limit)])
     handler = ProxyHandler(config)
     
     app.on_startup.append(lambda app: handler.start())

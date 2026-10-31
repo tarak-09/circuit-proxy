@@ -5,6 +5,7 @@ An async HTTP reverse proxy implementing the circuit breaker pattern to protect 
 ## Features
 
 - **Circuit Breaker Pattern**: Automatically trips to an `OPEN` state when the upstream server's failure rate exceeds a configurable threshold.
+- **IP-Based Rate Limiting**: Token bucket rate limiter per client IP to protect upstreams from traffic spikes.
 - **Rolling Window**: Tracks successes, failures (5xx HTTP status codes), and timeouts within a time-based rolling window.
 - **Self-Healing (Half-Open)**: After a reset timeout, the proxy allows a limited number of requests to pass through to probe if the upstream has recovered.
 - **Async I/O**: Fully non-blocking and highly concurrent powered by `aiohttp`.
@@ -52,6 +53,11 @@ breaker:
   window_size_seconds: 10.0      # Rolling window size
   reset_timeout_seconds: 5.0     # Time to wait before entering HALF-OPEN state
   half_open_max_probes: 3        # Number of successful probes required to close the circuit
+
+rate_limit:
+  enabled: true                  # Enable the token bucket rate limiter
+  rate: 10.0                     # Refill rate (tokens per second)
+  burst: 20                      # Maximum capacity (tokens)
 ```
 
 ## Management API & Observability
