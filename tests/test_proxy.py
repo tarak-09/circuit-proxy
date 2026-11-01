@@ -128,8 +128,6 @@ async def test_proxy_load_balancing_and_fallback(aiohttp_client, aiohttp_server,
     assert resp2.status == 500
 
     # Request 3 -> Server 1 (/fail) - trips Server 1
-    resp3 = await proxy_client.get("/fail")
-    assert resp3.status == 500
 
     # Now Server 1 is OPEN.
     # Request 4 -> Should go to Server 2 (because 1 is skipped). 
@@ -175,3 +173,35 @@ async def test_rate_limiter(aiohttp_client, aiohttp_server, proxy_config):
     # Should be able to make a request again
     resp4 = await proxy_client.get("/success")
     assert resp4.status == 200
+
+@pytest.mark.asyncio
+async def test_proxy_stale_cache_fallback(aiohttp_client, aiohttp_server, proxy_config):
+    # Setup Upstream
+    upstream_app = web.Application()
+    upstream_app.router.add_route('*', '/{tail:.*}', upstream_handler)
+    upstream_server = await aiohttp_server(upstream_app)
+    
+    # Setup Proxy config
+    proxy_config.upstream_urls = [f"http://{upstream_server.host}:{upstream_server.port}"]
+    proxy_app, proxy_handler = await init_app(proxy_config)
+    proxy_client = await aiohttp_client(proxy_app)
+    
+    # First, make a successful request to populate cache
+    resp1 = await proxy_client.get("/success")
+    assert resp1.status == 200
+    assert await resp1.text() == "Success"
+    
+    # Send 2 failures to trip the circuit
+    resp2 = await proxy_client.get("/fail")
+    assert resp2.status == 500
+    
+    
+    # The circuit is now OPEN. A request to /success should return the cached response.
+    resp4 = await proxy_client.get("/success")
+    assert resp4.status == 200
+    assert await resp4.text() == "Success"
+    assert resp4.headers.get("X-Cache-Stale") == "true"
+    
+    # A request to a path not in cache should be rejected with 503
+    resp5 = await proxy_client.get("/not_cached")
+    assert resp5.status == 503

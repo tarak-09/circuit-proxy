@@ -24,6 +24,7 @@ class ProxyHandler:
         ]
         self.current_index = 0
         self.session = None
+        self.cache = {}
 
     async def start(self):
         timeout = ClientTimeout(total=self.config.upstream_timeout_seconds)
@@ -49,6 +50,18 @@ class ProxyHandler:
                 break
 
         if not selected_breaker:
+            if request.method == "GET":
+                cache_key = request.path_qs
+                if cache_key in self.cache:
+                    logger.warning(f"Returning stale cache for {cache_key}")
+                    cached = self.cache[cache_key]
+                    headers = dict(cached['headers'])
+                    headers['X-Cache-Stale'] = 'true'
+                    return web.Response(
+                        body=cached['body'],
+                        status=cached['status'],
+                        headers=headers
+                    )
             logger.warning("Rejecting request, all circuit breakers are OPEN/HALF_OPEN.")
             return web.Response(status=503, text="Service Unavailable (All Circuit Breakers Open)")
 
@@ -81,6 +94,13 @@ class ProxyHandler:
                 # Read body and headers to return
                 body = await upstream_response.read()
                 response_headers = dict(upstream_response.headers)
+                
+                if request.method == "GET" and status == 200:
+                    self.cache[request.path_qs] = {
+                        'body': body,
+                        'status': status,
+                        'headers': response_headers
+                    }
                 
                 return web.Response(
                     body=body,

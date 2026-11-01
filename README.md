@@ -5,6 +5,7 @@ An async HTTP reverse proxy implementing the circuit breaker pattern to protect 
 ## Features
 
 - **Circuit Breaker Pattern**: Automatically trips to an `OPEN` state when the upstream server's failure rate exceeds a configurable threshold.
+- **Stale-Cache Fallback**: Maintains degraded but functional service by returning the most recently cached successful response for rejected `GET` requests when all circuits are `OPEN`, appending an `X-Cache-Stale: true` header.
 - **IP-Based Rate Limiting**: Token bucket rate limiter per client IP to protect upstreams from traffic spikes.
 - **Rolling Window**: Tracks successes, failures (5xx HTTP status codes), and timeouts within a time-based rolling window.
 - **Self-Healing (Half-Open)**: After a reset timeout, the proxy allows a limited number of requests to pass through to probe if the upstream has recovered.
@@ -74,7 +75,7 @@ Start the proxy using the above `config.yaml`. Let's assume we have a flaky upst
 
 ```text
 --- Requests ---
-GET /ok -> 200 Upstream OK
+GET /ok -> 200 Upstream OK (Cached)
 GET /fail -> 500 Upstream Error
 GET /fail -> 500 Upstream Error
 GET /fail -> 500 Upstream Error
@@ -82,7 +83,9 @@ GET /fail -> 503 Service Unavailable (Circuit Breaker Open)
 GET /fail -> 503 Service Unavailable (Circuit Breaker Open)
 
 # The circuit is now tripped open. Subsequent requests are rejected instantly.
-GET /ok -> 503 Service Unavailable (Circuit Breaker Open)
+# However, because /ok was cached before the failure, a stale response is returned!
+GET /ok -> 200 OK (X-Cache-Stale: true)
+GET /not-cached -> 503 Service Unavailable (Circuit Breaker Open)
 
 Waiting for reset timeout (5 seconds)...
 
