@@ -115,6 +115,12 @@ class CircuitBreaker:
         logger.info(f"CircuitBreaker[{self.url}]: Manually resetting to CLOSED.")
         self._transition_to_closed()
 
+    def force_open(self):
+        """Manually force the circuit breaker into OPEN state."""
+        if self.state != CircuitState.OPEN:
+            logger.warning(f"CircuitBreaker[{self.url}]: Forced to OPEN via active health check.")
+            self._transition_to_open()
+
     def _transition_to_half_open(self):
         logger.warning(f"CircuitBreaker[{self.url}]: Reset timeout elapsed. Transitioning to HALF_OPEN.")
         self.state = CircuitState.HALF_OPEN

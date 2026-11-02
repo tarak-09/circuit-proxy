@@ -205,3 +205,51 @@ async def test_proxy_stale_cache_fallback(aiohttp_client, aiohttp_server, proxy_
     # A request to a path not in cache should be rejected with 503
     resp5 = await proxy_client.get("/not_cached")
     assert resp5.status == 503
+
+@pytest.mark.asyncio
+async def test_proxy_health_check_forces_open(aiohttp_client, aiohttp_server, proxy_config):
+    health_status = 200
+
+    async def dynamic_upstream_handler(request):
+        if request.path == "/health":
+            return web.Response(status=health_status, text="Health")
+        elif request.path == "/success":
+            return web.Response(text="Success")
+        return web.Response(status=404, text="Not Found")
+
+    # Setup Upstream
+    upstream_app = web.Application()
+    upstream_app.router.add_route('*', '/{tail:.*}', dynamic_upstream_handler)
+    upstream_server = await aiohttp_server(upstream_app)
+    
+    # Setup Proxy config
+    proxy_config.upstream_urls = [f"http://{upstream_server.host}:{upstream_server.port}"]
+    proxy_config.health_check.enabled = True
+    proxy_config.health_check.endpoint = "/health"
+    proxy_config.health_check.interval_seconds = 0.2
+    proxy_config.health_check.timeout_seconds = 0.1
+
+    proxy_app, proxy_handler = await init_app(proxy_config)
+    proxy_client = await aiohttp_client(proxy_app)
+    
+    # Request should succeed initially
+    resp1 = await proxy_client.get("/success")
+    assert resp1.status == 200
+
+    # Simulate health check failure
+    health_status = 500
+
+    import asyncio
+    # Wait for health check to run
+    await asyncio.sleep(0.4)
+
+    # Circuit should be tripped now due to health check.
+    # Because /success was cached, we get a 200 with X-Cache-Stale: true
+    resp2 = await proxy_client.get("/success")
+    assert resp2.status == 200
+    assert resp2.headers.get("X-Cache-Stale") == "true"
+
+    # For an uncached endpoint, we should get 503
+    resp3 = await proxy_client.get("/uncached")
+    assert resp3.status == 503
+    assert "All Circuit Breakers Open" in await resp3.text()

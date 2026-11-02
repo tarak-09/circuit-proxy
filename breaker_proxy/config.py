@@ -4,6 +4,13 @@ from typing import Dict, Any
 
 
 @dataclass
+class HealthCheckConfig:
+    enabled: bool = False
+    endpoint: str = "/health"
+    interval_seconds: float = 10.0
+    timeout_seconds: float = 2.0
+
+@dataclass
 class RateLimitConfig:
     enabled: bool = False
     rate: float = 10.0
@@ -26,6 +33,7 @@ class ProxyConfig:
     upstream_timeout_seconds: float = 5.0
     breaker: BreakerConfig = field(default_factory=BreakerConfig)
     rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
+    health_check: HealthCheckConfig = field(default_factory=HealthCheckConfig)
 
 def load_config(config_path: str) -> ProxyConfig:
     with open(config_path, 'r') as f:
@@ -47,6 +55,14 @@ def load_config(config_path: str) -> ProxyConfig:
         burst=int(rate_limit_data.get('burst', 10))
     )
 
+    health_check_data = data.get('health_check', {})
+    health_check_config = HealthCheckConfig(
+        enabled=bool(health_check_data.get('enabled', False)),
+        endpoint=str(health_check_data.get('endpoint', '/health')),
+        interval_seconds=float(health_check_data.get('interval_seconds', 10.0)),
+        timeout_seconds=float(health_check_data.get('timeout_seconds', 2.0))
+    )
+
     upstream_urls = data.get('upstream_urls', [])
     if not upstream_urls and 'upstream_url' in data:
         upstream_urls = [data['upstream_url']]
@@ -58,5 +74,6 @@ def load_config(config_path: str) -> ProxyConfig:
         upstream_urls=upstream_urls or ['http://127.0.0.1:9000'],
         upstream_timeout_seconds=float(data.get('upstream_timeout_seconds', 5.0)),
         breaker=breaker_config,
-        rate_limit=rate_limit_config
+        rate_limit=rate_limit_config,
+        health_check=health_check_config
     )

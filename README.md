@@ -5,6 +5,7 @@ An async HTTP reverse proxy implementing the circuit breaker pattern to protect 
 ## Features
 
 - **Circuit Breaker Pattern**: Automatically trips to an `OPEN` state when the upstream server's failure rate exceeds a configurable threshold.
+- **Active Background Health Checking**: Periodically pings a configurable health endpoint on backends. If a probe fails, the circuit is preemptively forced `OPEN`, diverting traffic before user requests fail.
 - **Stale-Cache Fallback**: Maintains degraded but functional service by returning the most recently cached successful response for rejected `GET` requests when all circuits are `OPEN`, appending an `X-Cache-Stale: true` header.
 - **IP-Based Rate Limiting**: Token bucket rate limiter per client IP to protect upstreams from traffic spikes.
 - **Rolling Window**: Tracks successes, failures (5xx HTTP status codes), and timeouts within a time-based rolling window.
@@ -54,6 +55,12 @@ breaker:
   window_size_seconds: 10.0      # Rolling window size
   reset_timeout_seconds: 5.0     # Time to wait before entering HALF-OPEN state
   half_open_max_probes: 3        # Number of successful probes required to close the circuit
+
+health_check:
+  enabled: true                  # Enable active background health checking
+  endpoint: /health              # Endpoint to ping on upstream services
+  interval_seconds: 10.0         # How often to send health probes
+  timeout_seconds: 2.0           # Timeout for the health probe request
 
 rate_limit:
   enabled: true                  # Enable the token bucket rate limiter

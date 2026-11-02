@@ -25,14 +25,47 @@ class ProxyHandler:
         self.current_index = 0
         self.session = None
         self.cache = {}
+        self.health_check_tasks = []
 
     async def start(self):
         timeout = ClientTimeout(total=self.config.upstream_timeout_seconds)
         self.session = ClientSession(timeout=timeout)
 
+        if self.config.health_check.enabled:
+            for i, url in enumerate(self.config.upstream_urls):
+                task = asyncio.create_task(self._health_check_loop(url, self.breakers[i]))
+                self.health_check_tasks.append(task)
+
     async def close(self):
+        for task in self.health_check_tasks:
+            task.cancel()
+        if self.health_check_tasks:
+            await asyncio.gather(*self.health_check_tasks, return_exceptions=True)
+
         if self.session:
             await self.session.close()
+
+    async def _health_check_loop(self, base_url: str, breaker: CircuitBreaker):
+        endpoint = self.config.health_check.endpoint
+        interval = self.config.health_check.interval_seconds
+        timeout_seconds = self.config.health_check.timeout_seconds
+        health_url = yarl.URL(base_url).with_path(endpoint)
+
+        while True:
+            try:
+                await asyncio.sleep(interval)
+                async with ClientSession(timeout=ClientTimeout(total=timeout_seconds)) as session:
+                    async with session.get(health_url) as response:
+                        if response.status >= 500:
+                            logger.warning(f"Health check failed for {base_url} (status {response.status})")
+                            breaker.force_open()
+            except (ClientError, asyncio.TimeoutError) as e:
+                logger.warning(f"Health check failed for {base_url}: {e}")
+                breaker.force_open()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Unexpected error in health check for {base_url}: {e}")
 
     async def handle_request(self, request: web.Request) -> web.Response:
         urls_count = len(self.breakers)
